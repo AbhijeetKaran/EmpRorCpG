@@ -110,9 +110,22 @@ class SequenceFetcher:
     # Convert sequence into concensus matrix
     def makeConcensus(self,sequence):
         seqarray = np.array(list(sequence))
-        nmatrix = np.array([np.where(seqarray=='C',1,0),np.where(seqarray=='G',1,0),np.where(seqarray=='Q',1,0)])
-        cg = [1 if nmatrix[0][i] == 1 and nmatrix[1][i+1] == 1 else 0 for i in range(0,len(nmatrix[0])-1)]
-        cg.append(0)
+        nmatrix = np.array([np.where(seqarray=='C',1,0),np.where(seqarray=='G',1,0),np.zeros(len(sequence),dtype=int)])
+        
+        ## new section for faster marking of the CpG presence
+        # contains extra steps of copying 2 arrays and then deletion,appending and comparing
+        copy_c = nmatrix[0].copy()
+        copy_g = nmatrix[1].copy()
+        copy_g = np.delete(copy_g,0)  
+        
+        # deletion step can be removed, and operation for array copy_g should start from index 1 
+        copy_g = np.append(copy_g,0)
+        cg = ((np.where(copy_c != 0,1,0) == 1) & (np.where(copy_g != 0,1,0) == 1)).astype(int)
+
+        ## old method for marking CG dinucleotide: slower than the previous method, effect is visible on larger chromosomes
+        # contains only 0ne step of comapring by through loop
+        # cg = [1 if nmatrix[0][i] == 1 and nmatrix[1][i+1] == 1 else 0 for i in range(0,len(nmatrix[0])-1)]
+        # cg.append(0)
         nmatrix[2] = cg
         consensus = np.vstack([list(np.cumsum(row)) for row in nmatrix])
         return consensus
@@ -195,6 +208,29 @@ ccf = CountFeatures("/home/grids3/Desktop/emprorcpg/dm6.ncbiRefSeq.gtf")
 seq = ssf.readSequences('chrM')
 cons = ssf.makeConcensus(seq)
 
-#calculating CpG ratio for feature 'Transcript'
+# Calculating CpG ratio for feature 'Transcript'
 cpgcal = CpGCalculator()
 output_data = cpgcal.calByFeature(ccf.bedTable,cons,'chrM','transcript')
+
+# Calculating CpG ratio for all the segments in the genome
+# for chrs in ssf.index.keys():  
+#     print(chrs)
+#     seq = ssf.readSequences(chrs)
+#     cons = ssf.makeConcensus(seq)
+#     #calculating CpG ratio for feature 'Transcript' for all chromosomes one by one
+#     cpgcal = CpGCalculator()
+#     output_data = cpgcal.calByFeature(ccf.bedTable,cons,chrs,'transcript')
+#     print(output_data)
+
+## logs
+# Reading sequences from the file do not take much time : for the example file takes only ~2 seconds 
+# Making Concensus matrix takes time: "no other solution"
+
+## speed gain by logic
+# 1. Many contig sequence do not have annotation or asked feature in the gtf file 
+#    hence sequence reding and convertion for such contigs are of no use. A check 
+#    is required which will lower the time comsumption
+
+# 2. A class is required which can filter and then upload the content of the GTF file,
+#    Comment lines in the middle of the file will result in reading GTF file into dataFrame. 
+#    All the rows of the GTF file is no required hence avoiding that will give advance in memory usage.
